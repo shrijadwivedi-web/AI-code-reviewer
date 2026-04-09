@@ -32,6 +32,20 @@ const SuggestionsPanel = ({ suggestions }) => {
               <CheckCircle2 className="w-5 h-5 text-brand-400" />
             </div>
             <div className="flex-1 min-w-0">
+              {/* Render structured metadata badges */}
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${
+                  sugg.severity === 'critical' ? 'bg-red-900/40 border-red-500/50 text-red-400' : 
+                  sugg.severity === 'warning'  ? 'bg-yellow-900/40 border-yellow-500/50 text-yellow-400' : 
+                  'bg-blue-900/40 border-blue-500/50 text-blue-400'
+                }`}>
+                  {sugg.severity || 'INFO'}
+                </span>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border bg-purple-900/40 border-purple-500/50 text-purple-300">
+                  {sugg.category || 'General'}
+                </span>
+              </div>
+
               {sugg.file !== 'general' && (
                 <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 mb-2 border border-slate-700/50 bg-dark-900/50 inline-flex px-2 py-1 rounded-md">
                   <FileCode className="w-3.5 h-3.5" />
