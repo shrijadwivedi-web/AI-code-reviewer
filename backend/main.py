@@ -15,7 +15,9 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from routers import pr, repo
 
@@ -65,6 +67,21 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    """Flattens complex Pydantic errors into a single readable message for the frontend."""
+    # Grab the first validation failure (usually the most relevant)
+    first_error = exc.errors()[0]
+    field_name = first_error.get("loc", ["Unknown"])[-1]
+    error_msg = first_error.get("msg", "Invalid input")
+    
+    user_friendly_message = f"Check your input for '{field_name}': {error_msg}"
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": user_friendly_message}
+    )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
