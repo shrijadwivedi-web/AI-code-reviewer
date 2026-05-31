@@ -48,6 +48,7 @@ def _get_model() -> Optional[genai.GenerativeModel]:
         generation_config=genai.types.GenerationConfig(
             temperature=0.3,       # Low temp for consistent, structured output
             max_output_tokens=2048,
+            response_mime_type="application/json",
         ),
     )
     logger.info("Gemini model initialized (gemini-1.5-flash).")
@@ -154,14 +155,8 @@ Rules:
 def _parse_response(raw: str) -> List[Suggestion]:
     """
     Parse the model's response into Suggestion objects.
-    Handles cases where the model wraps JSON in markdown code fences.
     """
     text = raw.strip()
-
-    # Strip markdown code fences if present (e.g., ```json ... ```)
-    text = re.sub(r"^```[a-z]*\n?", "", text)
-    text = re.sub(r"\n?```$", "", text)
-    text = text.strip()
 
     try:
         data = json.loads(text)

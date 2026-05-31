@@ -3,10 +3,11 @@ Pydantic schemas for the AI Code Reviewer API.
 All request/response models are defined here to ensure a single source of truth.
 """
 
+import re
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -85,28 +86,32 @@ class AnalysisResult(BaseModel):
 class AnalyzeRepoRequest(BaseModel):
     """Request body for POST /analyze-repo."""
 
-    repo_url: str
-    github_token: Optional[str] = None
+    repo_url: str = Field(..., max_length=200)
+    github_token: Optional[str] = Field(None, max_length=100)
 
     @field_validator("repo_url")
     @classmethod
     def validate_repo_url(cls, v: str) -> str:
         v = v.strip()
-        if "github.com" not in v:
-            raise ValueError("URL must be a valid GitHub repository URL.")
+        # Strictly match github.com/owner/repo
+        pattern = r"^https?://(www\.)?github\.com/[\w-]+/[\w.-]+/?$"
+        if not re.match(pattern, v):
+            raise ValueError("URL must be a valid GitHub repository URL (e.g., https://github.com/owner/repo).")
         return v
 
 
 class AnalyzePRRequest(BaseModel):
     """Request body for POST /analyze-pr."""
 
-    pr_url: str
-    github_token: Optional[str] = None
+    pr_url: str = Field(..., max_length=300)
+    github_token: Optional[str] = Field(None, max_length=100)
 
     @field_validator("pr_url")
     @classmethod
     def validate_pr_url(cls, v: str) -> str:
         v = v.strip()
-        if "github.com" not in v or "/pull/" not in v:
-            raise ValueError("URL must be a valid GitHub pull request URL.")
+        # Strictly match github.com/owner/repo/pull/123
+        pattern = r"^https?://(www\.)?github\.com/[\w-]+/[\w.-]+/pull/\d+/?$"
+        if not re.match(pattern, v):
+            raise ValueError("URL must be a valid GitHub pull request URL (e.g., https://github.com/owner/repo/pull/1).")
         return v
