@@ -62,20 +62,30 @@ async def get_ai_suggestions(
 ) -> List[Suggestion]:
     """
     Generate AI-powered improvement suggestions for the detected issues.
-    Falls back to static rule-based suggestions if AI is unavailable.
+    Includes an exponential backoff retry mechanism to handle transient API errors.
+    Falls back to static rule-based suggestions if all retries fail.
     """
     model = _get_model()
     if model is None:
         return _static_fallback_suggestions(issues)
 
-    try:
-        prompt = _build_prompt(files, issues)
-        # Gemini's Python SDK is synchronous; run it off the event loop
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        return _parse_response(response.text)
-    except Exception as e:
-        logger.error(f"Gemini API call failed: {e}. Falling back to static suggestions.")
-        return _static_fallback_suggestions(issues)
+    prompt = _build_prompt(files, issues)
+    max_retries = 3
+    base_delay = 2  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            # Gemini's Python SDK is synchronous; run it off the event loop
+            response = await asyncio.to_thread(model.generate_content, prompt)
+            return _parse_response(response.text)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Gemini API failed after {max_retries} attempts: {e}. Falling back to static suggestions.")
+                return _static_fallback_suggestions(issues)
+            
+            delay = base_delay * (2 ** attempt)
+            logger.warning(f"Gemini API error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay}s...")
+            await asyncio.sleep(delay)
 
 
 # ─── Prompt Engineering ───────────────────────────────────────────────────────
@@ -122,12 +132,15 @@ Do NOT include markdown code fences, explanations, or any text outside the JSON 
 Required JSON schema (each element):
 {{
   "file": "path/to/file.py or 'general' if cross-cutting",
+  "category": "One of: ['Performance', 'Security', 'Clean Code', 'Architecture', 'Bug']",
+  "severity": "One of: ['critical', 'warning', 'info']",
   "suggestion": "Specific, actionable suggestion (1-3 sentences)",
   "example": "Optional short code snippet (max 8 lines) or null"
 }}
 
 Rules:
 - Provide 3 to 7 suggestions
+- Only flag a suggestion as 'critical' if it causes data loss, security breaches, or major crashes.
 - Be concrete, not generic ("Use logging" is good; "improve code" is not)
 - Address the most impactful issues first
 - Keep examples concise and directly relevant
@@ -160,6 +173,8 @@ def _parse_response(raw: str) -> List[Suggestion]:
                 suggestions.append(
                     Suggestion(
                         file=item["file"],
+                        category=item.get("category", "Clean Code"),
+                        severity=item.get("severity", "info"),
                         suggestion=item["suggestion"],
                         example=item.get("example"),
                     )
@@ -185,6 +200,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Clean Code",
+                severity=Severity.WARNING,
                 suggestion=(
                     "Several functions exceed 50 lines. Apply the Single Responsibility Principle: "
                     "each function should do exactly one thing. Extract sub-routines into smaller, "
@@ -203,6 +220,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Clean Code",
+                severity=Severity.WARNING,
                 suggestion=(
                     "Deep nesting (4+ levels) reduces readability and testability. "
                     "Use guard clauses (early returns) to invert nested conditions and flatten the flow."
@@ -222,6 +241,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Architecture",
+                severity=Severity.WARNING,
                 suggestion=(
                     "Files over 300 lines typically mix multiple concerns. "
                     "Separate models, business logic, and utilities into distinct modules "
@@ -235,6 +256,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Clean Code",
+                severity=Severity.INFO,
                 suggestion=(
                     "Replace magic numbers with named constants. This documents intent and "
                     "makes future changes safer — you only update one definition."
@@ -251,6 +274,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Architecture",
+                severity=Severity.INFO,
                 suggestion=(
                     "TODO/FIXME comments indicate incomplete work. Convert them into tracked "
                     "GitHub issues so they don't get lost in the codebase."
@@ -263,6 +288,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Performance",
+                severity=Severity.INFO,
                 suggestion=(
                     "Replace print() calls with Python's built-in logging module. "
                     "Loggers support log levels, timestamps, and can be silenced in production "
@@ -281,6 +308,8 @@ def _static_fallback_suggestions(issues: List[Issue]) -> List[Suggestion]:
         suggestions.append(
             Suggestion(
                 file="general",
+                category="Clean Code",
+                severity=Severity.INFO,
                 suggestion=(
                     "The codebase looks clean! Consider adding type annotations and docstrings "
                     "to improve long-term maintainability and IDE support."

@@ -52,6 +52,8 @@ class Suggestion(BaseModel):
     """An AI-generated improvement suggestion."""
 
     file: str
+    category: str
+    severity: Severity
     suggestion: str
     example: Optional[str] = None  # short code snippet demonstrating the fix
 

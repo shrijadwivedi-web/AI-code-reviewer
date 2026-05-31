@@ -9,6 +9,7 @@ Orchestrates:
 """
 
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException
 
@@ -26,6 +27,10 @@ from utils.helpers import calculate_language_breakdown
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Simple in-memory TTL Cache (Key: url + token, Value: tuple(timestamp, AnalysisResult))
+CACHE_TTL_SECONDS = 3600 # 1 hour
+_analysis_cache = {}
+
 
 @router.post(
     "/analyze-repo",
@@ -38,6 +43,14 @@ logger = logging.getLogger(__name__)
 )
 async def analyze_repo(request: AnalyzeRepoRequest) -> AnalysisResult:
     logger.info(f"Repository analysis requested: {request.repo_url}")
+
+    # ── Cache Check ────────────────────────────────────────────────────────
+    cache_key = f"{request.repo_url}::{request.github_token or 'anon'}"
+    if cache_key in _analysis_cache:
+        cached_time, cached_result = _analysis_cache[cache_key]
+        if time.time() - cached_time < CACHE_TTL_SECONDS:
+            logger.info("Serving analysis from cache.")
+            return cached_result
 
     # ── Step 1: Fetch source files ─────────────────────────────────────────
     try:
@@ -78,7 +91,7 @@ async def analyze_repo(request: AnalyzeRepoRequest) -> AnalysisResult:
         f"files: {len(files)}, issues: {len(issues)}, suggestions: {len(suggestions)}"
     )
 
-    return AnalysisResult(
+    final_result = AnalysisResult(
         score=score,
         summary=summary,
         issues=issues,
@@ -88,6 +101,8 @@ async def analyze_repo(request: AnalyzeRepoRequest) -> AnalysisResult:
         language_breakdown=language_breakdown,
         analysis_type=AnalysisType.REPO,
     )
+    _analysis_cache[cache_key] = (time.time(), final_result)
+    return final_result
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
